@@ -12,7 +12,8 @@ use std::mem;
 
 unsafe fn foo() -> (i8, *const (), Option<fn()>) {
     let i = mem::transmute(bar);
-    //~^ ERROR transmute called with types of different sizes
+    //~^ ERROR transmutation from a type with an unspecified layout
+    //~| ERROR transmute called with types of different sizes
 
 
     let p = mem::transmute(foo);
@@ -29,7 +30,8 @@ unsafe fn foo() -> (i8, *const (), Option<fn()>) {
 unsafe fn bar() {
     // Error as usual if the resulting type is not pointer-sized.
     mem::transmute::<_, u8>(main);
-    //~^ ERROR transmute called with types of different sizes
+    //~^ ERROR transmutation from a type with an unspecified layout
+    //~| ERROR transmute called with types of different sizes
 
 
     mem::transmute::<_, *mut ()>(foo);

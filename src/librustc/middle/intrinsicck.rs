@@ -116,6 +116,23 @@ impl<'a, 'tcx> ExprVisitor<'a, 'tcx> {
             }
         };
 
+        let unspecified_layout = |msg, ty| {
+            struct_span_err!(self.tcx.sess, span, E0912, "{}", msg)
+                .note(&format!("{} has an unspecified layout", ty))
+                .note("this will become a hard error in the future")
+                .emit();
+        };
+
+        // Check that types have specified layout
+        if from.has_specified_layout(self.tcx) == Some(false) {
+            unspecified_layout("transmutation from a type with an unspecified layout", from);
+        }
+
+        if to.has_specified_layout(self.tcx) == Some(false) {
+            unspecified_layout("transmutation to a type with an unspecified layout", to);
+        }
+
+
         struct_span_err!(self.tcx.sess, span, E0512,
             "transmute called with types of different sizes")
             .note(&format!("source type: {} ({})", from, skeleton_string(from, sk_from)))

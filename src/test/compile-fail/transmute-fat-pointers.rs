@@ -15,7 +15,9 @@
 use std::mem::transmute;
 
 fn a<T, U: ?Sized>(x: &[T]) -> &U {
-    unsafe { transmute(x) } //~ ERROR transmute called with types of different sizes
+    unsafe { transmute(x) }
+    //~^ ERROR transmutation from a type with an unspecified layout
+    //~| ERROR transmute called with types of different sizes
 }
 
 fn b<T: ?Sized, U: ?Sized>(x: &T) -> &U {
