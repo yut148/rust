@@ -17,7 +17,7 @@ use middle::region;
 use polonius_engine::Atom;
 use rustc_data_structures::indexed_vec::Idx;
 use ty::subst::{Substs, Subst, Kind, UnpackedKind};
-use ty::{self, AdtDef, TypeFlags, Ty, TyCtxt, TypeFoldable};
+use ty::{self, AdtDef, AdtKind, TypeFlags, Ty, TyCtxt, TypeFoldable};
 use ty::{Slice, TyS, ParamEnvAnd, ParamEnv};
 use util::captures::Captures;
 use mir::interpret::{Scalar, Pointer, Value, ConstValue};
@@ -1846,6 +1846,78 @@ impl<'a, 'gcx, 'tcx> TyS<'tcx> {
             TyError => Some(ty::ClosureKind::Fn),
 
             _ => bug!("cannot convert type `{:?}` to a closure kind", self),
+        }
+    }
+
+    //
+    pub fn has_specified_layout(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Option<bool> {
+        match self.sty {
+            // Not concrete, cannot say anything
+            TyInfer(_) | TyError | TyParam(_) | TyProjection(_) | TyAnon(_, _) | TyDynamic(_, _) =>
+                None,
+            // Outright unspecified to be anything in particular
+            TyClosure(_, _) | TyGenerator(_, _, _) | TyGeneratorWitness(_) => Some(false),
+            TyFnDef(_, _) => Some(false),
+            TyTuple(_) => Some(false),
+            TyForeign(_) => Some(false),
+            // Unsized types
+            TyNever | TyStr | TySlice(_) => Some(false),
+
+
+            // Definitely specified layout
+            TyFnPtr(_) |
+            TyBool |
+            TyChar |
+            TyInt(_) |
+            TyUint(_) |
+            TyFloat(_) |
+            // FIXME: not for fat pointers.
+            TyRawPtr(_) => Some(true),
+
+            // FIXME: Properly handle sizedness check
+            TyRef(_, &ty::TyS { sty: TyNever, .. }, _) => Some(false),
+            TyRef(_, &ty::TyS { sty: TyStr, .. }, _) => Some(false),
+            TyRef(_, &ty::TyS { sty: TySlice(_), .. }, _) => Some(false),
+            TyRef(_, _, _) => Some(true),
+
+            // Layout specification depends on inner types
+            TyArray(ty, _) => {
+                ty.has_specified_layout(tcx)
+            },
+            TyAdt(def, substs) => {
+                // Documentation guarantees 0-sizedness.
+                if def.is_phantom_data() {
+                    return Some(true);
+                }
+                match def.adt_kind() {
+                    AdtKind::Struct | AdtKind::Union => {
+                        if !def.repr.c() && !def.repr.transparent() {
+                            return Some(false);
+                        }
+                        // FIXME: do we guarantee 0-sizedness for structs with 0 fields?
+                        // If not, they should cause Some(false) here.
+                        let mut seen_none = false;
+                        for field in &def.non_enum_variant().fields {
+                            let field_ty = field.ty(tcx, substs);
+                            match field_ty.has_specified_layout(tcx) {
+                                Some(true) => continue,
+                                None => {
+                                    seen_none = true;
+                                    continue;
+                                }
+                                x => return x,
+                            }
+                        }
+                        return if seen_none { None } else { Some(true) };
+                    }
+                    AdtKind::Enum => {
+                        if !def.repr.c() {
+                            return Some(false);
+                        }
+                        return Some(true);
+                    }
+                }
+            },
         }
     }
 }
